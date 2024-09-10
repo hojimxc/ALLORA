@@ -5,49 +5,34 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 from pmdarima import auto_arima
+from datetime import datetime, timedelta
 
 # create our Flask app
 app = Flask(__name__)
 
-def get_coingecko_url(token):
-    base_url = "https://api.coingecko.com/api/v3/coins/"
-    token_map = {
-        'ETH': 'ethereum',
-        'SOL': 'solana',
-        'BTC': 'bitcoin',
-        'BNB': 'binancecoin',
-        'ARB': 'arbitrum'
-    }
-    
-    token = token.upper()
-    if token in token_map:
-        url = f"{base_url}{token_map[token]}/market_chart?vs_currency=usd&days=30&interval=daily"
-        return url
-    else:
-        raise ValueError("Unsupported token")
+def get_binance_klines_url(symbol, interval='1d', limit=30):
+    base_url = "https://api.binance.com/api/v3/klines"
+    url = f"{base_url}?symbol={symbol}&interval={interval}&limit={limit}"
+    return url
 
 # define our endpoint
-@app.route("/inference/<string:token>")
-def get_inference(token):
-    """Generate inference for given token."""
+@app.route("/inference/<string:symbol>")
+def get_inference(symbol):
+    """Generate inference for given symbol."""
     try:
-        # Get the data from Coingecko
-        url = get_coingecko_url(token)
+        # Get the data from Binance
+        url = get_binance_klines_url(symbol)
     except ValueError as e:
         return Response(json.dumps({"error": str(e)}), status=400, mimetype='application/json')
 
-    headers = {
-        "accept": "application/json",
-        "x-cg-demo-api-key": "CG-XXXXXXXXXXXXXXXXXXXXXXXXXX"  # Replace with your API key
-    }
-
-    response = requests.get(url, headers=headers)
+    response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        df = pd.DataFrame(data["prices"])
-        df.columns = ["ds", "y"]
-        df["ds"] = pd.to_datetime(df["ds"], unit='ms')
-        df = df[:-1]  # Removing today's price
+        df = pd.DataFrame(data, columns=['Open time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close time', 'Quote asset volume', 'Number of trades', 'Taker buy base asset volume', 'Taker buy quote asset volume', 'Ignore'])
+        df['Open time'] = pd.to_datetime(df['Open time'], unit='ms')
+        df['Close'] = df['Close'].astype(float)
+        df = df[['Open time', 'Close']]
+        df.columns = ['ds', 'y']
         print(df.tail(5))
     else:
         return Response(json.dumps({"Failed to retrieve data from the API": str(response.text)}),
